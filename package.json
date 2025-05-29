@@ -12,9 +12,13 @@
   "dependencies": {
     "@google/genai": "^1.0.1",
     "@google/generative-ai": "^0.24.1",
+    "@vercel/blob": "^1.1.1",
+    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
     "dotenv": "^16.5.0",
     "firebase-admin": "^13.4.0",
+    "formidable": "^3.5.4",
+    "formidable-serverless": "^1.1.1",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.14.1",
     "next": "15.3.2",

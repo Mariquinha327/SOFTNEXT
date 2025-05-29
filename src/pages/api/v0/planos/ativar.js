@@ -1,27 +1,77 @@
-import { db } from '@/lib/firebaseAdmin';
-import { verifyToken } from '@/lib/auth';
+import db from '../../../../lib/db';
+import { withAuth } from '../../../../lib/auth';
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
-
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Token ausente.' });
-
-  const decoded = verifyToken(token);
-  const planoCliente = {
-    cliente_id: decoded.id,
-    plano_id: req.body.plano_id,
-    ativo: true,
-    data_inicio: new Date(),
-    data_expiracao: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    conversas_usadas: 0,
-  };
-
-  try {
-    await db.collection('plano_cliente').doc(decoded.id).set(planoCliente);
-    return res.status(200).json({ message: 'Plano ativado.' });
-  } catch (error) {
-    console.error('Erro ativar plano:', error);
-    return res.status(500).json({ error: 'Erro ao ativar plano.' });
+async function handler(req, res) {
+  const { method } = req;
+  
+  switch (method) {
+    case 'POST':
+      return await ativarPlano(req, res);
+    default:
+      res.setHeader('Allow', ['POST']);
+      return res.status(405).json({ error: `Método ${method} não permitido` });
   }
 }
+
+async function ativarPlano(req, res) {
+  try {
+    const { cliente_id, plano_id, duracao_meses = 1 } = req.body;
+
+    if (!cliente_id || !plano_id) {
+      return res.status(400).json({ 
+        error: 'cliente_id e plano_id são obrigatórios' 
+      });
+    }
+
+    // Verificar se o plano existe
+    const [planoExists] = await db.execute(
+      'SELECT id, nome FROM planos WHERE id = ?',
+      [plano_id]
+    );
+
+    if (planoExists.length === 0) {
+      return res.status(404).json({ error: 'Plano não encontrado' });
+    }
+
+    const plano = planoExists[0];
+
+    // Desativar plano atual se existir
+    await db.execute(`
+      UPDATE plano_cliente 
+      SET ativo = FALSE 
+      WHERE cliente_id = ? AND ativo = TRUE
+    `, [cliente_id]);
+
+    // Calcular datas
+    const dataInicio = new Date();
+    const dataExpiracao = new Date();
+    dataExpiracao.setMonth(dataExpiracao.getMonth() + parseInt(duracao_meses));
+
+    // Ativar novo plano
+    const [result] = await db.execute(`
+      INSERT INTO plano_cliente (
+        cliente_id, plano_id, ativo, data_inicio, data_expiracao, conversas_usadas
+      ) VALUES (?, ?, TRUE, ?, ?, 0)
+    `, [
+      cliente_id, 
+      plano_id, 
+      dataInicio.toISOString().split('T')[0],
+      dataExpiracao.toISOString().split('T')[0]
+    ]);
+
+    return res.status(201).json({
+      message: 'Plano ativado com sucesso',
+      plano_cliente_id: result.insertId,
+      plano_nome: plano.nome,
+      data_inicio: dataInicio.toISOString().split('T')[0],
+      data_expiracao: dataExpiracao.toISOString().split('T')[0]
+    });
+
+  } catch (error) {
+    console.error('Erro ao ativar plano:', error);
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+}
+
+export default withAuth(handler);
+
